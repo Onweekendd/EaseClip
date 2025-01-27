@@ -20,7 +20,7 @@ class Editor {
     });
 
     this.timeManager = new TimeManager(this.state, this.videoProcess);
-    this.commandManager = new CommandManager();
+    this.commandManager = new CommandManager();    
   }
 
   initRenderer({
