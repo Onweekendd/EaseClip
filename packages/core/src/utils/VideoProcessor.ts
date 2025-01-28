@@ -6,6 +6,7 @@ import type {
   TrakBoxParser,
 } from "@webav/mp4box.js";
 
+
 import type { DecodedFrame } from "../elements/resource/Video.js";
 
 /**
@@ -35,7 +36,7 @@ export class VideoProcessor {
    */
   private parseVideoCodecDesc(track: TrakBoxParser): Uint8Array {
     for (const entry of track.mdia.minf.stbl.stsd.entries) {
-      // @ts-expect-error
+      // @ts-expect-error 类型错误
       const box = entry.avcC ?? entry.hvcC ?? entry.av1C ?? entry.vpcC;
       if (box != null) {
         const stream = new MP4Box.DataStream(

@@ -2,16 +2,35 @@ import { EditorState } from "./EditorState.ts";
 import { Video } from "./elements/resource/Video.ts";
 import { VideoProcessor } from "./utils/VideoProcessor.ts";
 
+
+import { proxy } from "comlink";
+import type { ProxyResult } from "comlink";
+
+import type { MetadataWorker } from "./workers/Metadata.worker.ts";
+
+
 class VideoProcess {
   state: EditorState;
   private videoProcessor: VideoProcessor;
+  private proxyWorker: ProxyResult<MetadataWorker>;
+
 
   constructor({ state }: { state: EditorState }) {
     this.state = state;
-    this.videoProcessor = new VideoProcessor();
+    this.videoProcessor = new VideoProcessor();    
+
+    this.proxyWorker = proxy<MetadataWorker>(new Worker(new URL("./workers/Metadata.worker.js", import.meta.url),{
+      type: "module",
+    }));
   }
 
-  onVideoUpload = async ({ file }: { file: File }) => {
+  onVideoUpload = async ({ file }: { file: File }) => {    
+    console.log(this.proxyWorker)
+
+   this.proxyWorker.parse(file).then(({duration,width,height,codec})=>{
+    console.log(duration,width,height,codec)
+   })
+
     const newVideo = new Video({
       name: file.name,
       fileSize: file.size,

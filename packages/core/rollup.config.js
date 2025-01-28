@@ -10,7 +10,7 @@ import { fileURLToPath } from "url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default {
-  input: "./src/index.ts",
+  input: ["./src/index.ts", "./src/workers/Metadata.worker.ts"],
   plugins: [
     alias({
       entries: [{ find: "@", replacement: path.resolve(__dirname, "src") }],
@@ -25,6 +25,7 @@ export default {
     "mitt",
     "uuid",
     "@webav/mp4box.js",
+    "comlink",
   ],
   output: {
     dir: "dist",
