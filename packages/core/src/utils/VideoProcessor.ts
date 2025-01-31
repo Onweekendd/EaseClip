@@ -174,6 +174,7 @@ export class VideoProcessor {
             frame.close();
           }
         },
+        
         error: (error) => {
           if (!isDecoderClosed) {
             isDecoderClosed = true;

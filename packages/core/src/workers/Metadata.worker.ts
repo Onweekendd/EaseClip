@@ -1,6 +1,42 @@
 import { expose } from 'comlink'
 import MP4Box from '@webav/mp4box.js'
-import type { MP4ArrayBuffer } from '@webav/mp4box.js'
+import type { MP4ArrayBuffer,TrakBoxParser } from '@webav/mp4box.js'
+
+/**
+ * 解析视频编解码器描述信息
+ */
+function parseVideoCodecDesc(track: TrakBoxParser): Uint8Array {
+  for (const entry of track.mdia.minf.stbl.stsd.entries) {
+    // @ts-expect-error 类型错误
+    const box = entry.avcC ?? entry.hvcC ?? entry.av1C ?? entry.vpcC;
+    if (box != null) {
+      const stream = new MP4Box.DataStream(
+        undefined,
+        0,
+        MP4Box.DataStream.BIG_ENDIAN,
+      );
+      box.write(stream);
+      return new Uint8Array(stream.buffer.slice(8));
+    }
+  }
+  throw Error("avcC, hvcC, av1C or VPX not found");
+}
+
+async function getVideoCover(videoUrl: string): Promise<string> {
+    return new Promise((resolve) => {
+      const video = document.createElement("video");
+      video.src = videoUrl;
+      video.currentTime = 0;
+      video.addEventListener("loadeddata", () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg"));
+      });
+    });
+  }
 
 const worker = {
   async parse(file: File): Promise<{
@@ -8,17 +44,49 @@ const worker = {
     width: number;
     height: number;
     codec: string;
+    description: Uint8Array;
+    frameRate: number;
+    createTime: Date;
+    timescale: number;
+    cover: string;
   }> {
-    const buffer = await file.slice(0, 1_000_000).arrayBuffer()
+    const buffer = await file.arrayBuffer()
     const mp4File = MP4Box.createFile()
     
     return new Promise((resolve, reject) => {
-      mp4File.onReady = (info) => {
+      mp4File.onReady = async (info) => {
+
+        const videoTrack = info.videoTracks[0];
+        if (!videoTrack) {
+          reject(new Error("No video track found"));
+          return;
+        }
+
+        const description = parseVideoCodecDesc(
+          mp4File.getTrackById(videoTrack.id),
+        );
+
+        const cover = ""  
+
+        const width = videoTrack.track_width;
+        const height = videoTrack.track_height;
+        const totalSeconds = videoTrack.duration / videoTrack.timescale;
+        const frameRate = Math.round(videoTrack.nb_samples / totalSeconds);
+        const duration = videoTrack.duration / videoTrack.timescale;
+        const createTime = new Date(videoTrack.created);
+        const codec = videoTrack.codec;
+        const timescale = videoTrack.timescale;
+
         resolve({
-          duration: info.duration / info.timescale,
-          width: info.videoTracks[0].video.width,
-          height: info.videoTracks[0].video.height,
-          codec: info.videoTracks[0].codec
+          duration,
+          width,
+          height,
+          codec,
+          description,
+          frameRate,
+          createTime,
+          timescale,
+          cover
         })
       }
       mp4File.onError = reject
