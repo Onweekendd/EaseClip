@@ -22,6 +22,26 @@ class VideoProcess {
     );
   }
 
+    /**
+   * 获取视频封面
+   */
+    public async getVideoCover(videoUrl: string): Promise<string> {
+      return new Promise((resolve) => {
+        const video = document.createElement("video");
+        video.src = videoUrl;
+        video.currentTime = 0;
+        video.addEventListener("loadeddata", () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const ctx = canvas.getContext("2d");
+          ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg"));
+        });
+      });
+    }
+  
+
   onVideoUpload = async ({ file }: { file: File }) => {
     const newVideo = new Video({
       name: file.name,
@@ -34,8 +54,7 @@ class VideoProcess {
 
     this.proxyWorker
       .parse(file)
-      .then(async ({ duration, width, height, codec, frameRate, description, createTime,cover,timescale }) => {
-        console.log(duration,width,height,codec,frameRate,description,createTime,cover,timescale)
+      .then(async ({ duration, width, height, codec, frameRate, description, createTime,timescale }) => {
         const videoFrames = [];
 
         newVideo.width = width;
@@ -46,7 +65,7 @@ class VideoProcess {
         newVideo.codec = codec;
         newVideo.status = "finished";
 
-        newVideo.cover = cover;
+        newVideo.cover = await this.getVideoCover(newVideo.fileUrl);
         newVideo.videoFrame = videoFrames;
       })
       .catch((error) => {

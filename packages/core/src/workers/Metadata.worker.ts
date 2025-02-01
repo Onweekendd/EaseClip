@@ -22,21 +22,7 @@ function parseVideoCodecDesc(track: TrakBoxParser): Uint8Array {
   throw Error("avcC, hvcC, av1C or VPX not found");
 }
 
-async function getVideoCover(videoUrl: string): Promise<string> {
-    return new Promise((resolve) => {
-      const video = document.createElement("video");
-      video.src = videoUrl;
-      video.currentTime = 0;
-      video.addEventListener("loadeddata", () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        const ctx = canvas.getContext("2d");
-        ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL("image/jpeg"));
-      });
-    });
-  }
+
 
 const worker = {
   async parse(file: File): Promise<{
@@ -48,7 +34,6 @@ const worker = {
     frameRate: number;
     createTime: Date;
     timescale: number;
-    cover: string;
   }> {
     const buffer = await file.arrayBuffer()
     const mp4File = MP4Box.createFile()
@@ -66,7 +51,6 @@ const worker = {
           mp4File.getTrackById(videoTrack.id),
         );
 
-        const cover = ""  
 
         const width = videoTrack.track_width;
         const height = videoTrack.track_height;
@@ -86,7 +70,6 @@ const worker = {
           frameRate,
           createTime,
           timescale,
-          cover
         })
       }
       mp4File.onError = reject
