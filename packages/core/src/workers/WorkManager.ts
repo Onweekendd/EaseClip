@@ -1,3 +1,276 @@
-class WorkManager{
-    
+import { MP4Sample } from "@webav/mp4box.js";
+
+import { Video } from "../elements/resource/Video";
+import { DecodeTaskHandler, DecodedFrame } from "./Decode.worker";
+import { MetadataTaskHandler } from "./Metadata.worker";
+import { SampleTaskHandler } from "./Sample.worker";
+
+// 定义工作类型枚举
+export enum WorkType {
+  SAMPLE = "sample",
+  DECODE = "decode",
+  METADATA = "metadata",
+}
+
+// 定义每种工作类型对应的数据类型映射
+export interface WorkDataMap {
+  [WorkType.SAMPLE]: File;
+  [WorkType.DECODE]: {
+    samples: MP4Sample[];
+    config: any;
+    timescale: number;
+  };
+  [WorkType.METADATA]: File;
+}
+
+// 使用映射类型替代三元运算符
+export type WorkDataType<T extends WorkType> = WorkDataMap[T];
+
+// 定义每个worker的返回类型映射
+export interface WorkResultMap {
+  [WorkType.SAMPLE]: MP4Sample[];
+  [WorkType.DECODE]: DecodedFrame[];
+  [WorkType.METADATA]: {
+    duration: number;
+    width: number;
+    height: number;
+    codec: string;
+    description: Uint8Array;
+    frameRate: number;
+    createTime: Date;
+    timescale: number;
+  };
+}
+
+// 修改任务接口，使用WorkResultMap来约束resolve和reject的类型
+interface WorkTask<T extends WorkType = WorkType> {
+  type: T;
+  priority: number;
+  data: WorkDataType<T>;
+  resolve: (value: WorkResultMap[T]) => void;
+  reject: (reason: Error) => void;
+}
+
+// 修改策略接口
+export interface TaskHandler<T extends WorkType = WorkType> {
+  handle(worker: Worker, data: WorkDataType<T>): Promise<WorkResultMap[T]>;
+}
+
+export class WorkManager {
+  // 共享的解码帧数据（使用Map存储不同时间段的帧）
+  private static sharedFrames = new Map<string, DecodedFrame[]>();
+
+  // 任务队列（按优先级排序）
+  private taskQueue: Array<WorkTask> = [];
+
+  // Worker池（使用Map存储不同类型的worker）
+  private workerPool = new Map<
+    WorkType,
+    {
+      workers: Array<Worker | null>;
+      maxCount: number;
+    }
+  >([
+    [WorkType.SAMPLE, { workers: [], maxCount: 2 }],
+    [WorkType.DECODE, { workers: [], maxCount: 4 }], // 解码worker数量最多
+    [WorkType.METADATA, { workers: [], maxCount: 1 }],
+  ]);
+
+  // 在WorkManager类中添加策略映射
+  private taskHandlers = new Map<WorkType, TaskHandler>([
+    [WorkType.SAMPLE, new SampleTaskHandler()],
+    [WorkType.DECODE, new DecodeTaskHandler()],
+    [WorkType.METADATA, new MetadataTaskHandler()],
+  ]);
+
+  // 关联的视频实例
+  constructor(private video: Video) {
+    this.initWorkers();
+  }
+
+  // 初始化Worker池
+  private initWorkers() {
+    this.workerPool.forEach((config, type) => {
+      for (let i = 0; i < config.maxCount; i++) {
+        let worker: Worker | null = null;
+        switch (type) {
+          case WorkType.SAMPLE:
+            worker = new Worker(new URL("./Sample.worker.ts", import.meta.url));
+            break;
+          case WorkType.DECODE:
+            worker = new Worker(new URL("./Decode.worker.ts", import.meta.url));
+            break;
+          case WorkType.METADATA:
+            worker = new Worker(
+              new URL("./Metadata.worker.ts", import.meta.url),
+            );
+            break;
+        }
+        config.workers.push(worker);
+      }
+    });
+  }
+
+  // 添加任务到队列
+  private enqueueTask<T extends WorkType>(task: WorkTask<T>) {
+    if (!this.isWorkDataType(task.type, task.data)) {
+      task.reject(new Error(`Invalid data type for ${task.type} task`));
+      return;
+    }
+    const index = this.taskQueue.findIndex((t) => t.priority < task.priority);
+    if (index === -1) {
+      this.taskQueue.push(task);
+    } else {
+      this.taskQueue.splice(index, 0, task);
+    }
+    this.processTasks();
+  }
+
+  // 处理任务
+  private async processTasks() {
+    for (const type of [WorkType.METADATA, WorkType.SAMPLE, WorkType.DECODE]) {
+      const pool = this.workerPool.get(type)!;
+      const availableWorker = pool.workers.find((w) => w !== null);
+
+      if (availableWorker && this.taskQueue.length > 0) {
+        const taskIndex = this.taskQueue.findIndex((t) => t.type === type);
+        if (taskIndex === -1) continue;
+
+        const task = this.taskQueue.splice(taskIndex, 1)[0];
+        const workerIndex = pool.workers.indexOf(availableWorker);
+        pool.workers[workerIndex] = null; // 标记为忙碌
+
+        try {
+          const result = await this.executeTask(
+            availableWorker,
+            type,
+            task.data,
+          );
+
+          // 处理解码结果
+          if (type === WorkType.DECODE) {
+            const frames = result as DecodedFrame[];
+            this.mergeFrames(frames);
+          }
+
+          task.resolve(result);
+        } catch (error) {
+          task.reject(error);
+        } finally {
+          pool.workers[workerIndex] = availableWorker; // 恢复可用状态
+          this.processTasks(); // 继续处理剩余任务
+        }
+      }
+    }
+  }
+
+  // 合并解码帧（使用时间戳去重）
+  private mergeFrames(newFrames: DecodedFrame[]) {
+    const existingFrames = this.video.videoFrame;
+    const merged = [...existingFrames];
+
+    newFrames.forEach((frame) => {
+      if (!existingFrames.some((f) => f.timestamp === frame.timestamp)) {
+        merged.push(frame);
+      }
+    });
+
+    // 按时间戳排序
+    merged.sort((a, b) => a.timestamp - b.timestamp);
+    this.video.videoFrame = merged;
+  }
+
+  // 修改后的executeTask方法
+  private async executeTask<T extends WorkType>(
+    worker: Worker,
+    type: T,
+    data: WorkDataType<T>,
+  ): Promise<WorkResultMap[T]> {
+    const handler = this.taskHandlers.get(type);
+    if (!handler) {
+      throw new Error("Unsupported work type");
+    }
+    return handler.handle(worker, data) as Promise<WorkResultMap[T]>;
+  }
+
+  // 公共方法：提交元数据解析任务
+  async parseMetadata(file: File): Promise<void> {
+    const meta = await new Promise<WorkResultMap[WorkType.METADATA]>(
+      (resolve, reject) => {
+        this.enqueueTask({
+          type: WorkType.METADATA,
+          priority: 1,
+          data: file,
+          resolve,
+          reject,
+        });
+      },
+    );
+
+    Object.assign(this.video, meta);
+    this.video.status = "finished";
+  }
+
+  // 公共方法：提交采样任务
+  async processSamples(file: File): Promise<WorkResultMap[WorkType.SAMPLE]> {
+    return new Promise((resolve, reject) => {
+      this.enqueueTask({
+        type: WorkType.SAMPLE,
+        priority: 2,
+        data: file,
+        resolve,
+        reject,
+      });
+    });
+  }
+
+  // 公共方法：提交解码任务
+  async decodeFrames(
+    samples: MP4Sample[],
+    config: any,
+    timescale: number,
+  ): Promise<DecodedFrame[]> {
+    return new Promise<WorkResultMap[WorkType.DECODE]>((resolve, reject) => {
+      this.enqueueTask({
+        type: WorkType.DECODE,
+        priority: 3,
+        data: { samples, config, timescale },
+        resolve,
+        reject,
+      });
+    });
+  }
+
+  // 销毁所有worker
+  destroy() {
+    this.workerPool.forEach((config) => {
+      config.workers.forEach((worker) => {
+        worker?.terminate();
+      });
+      config.workers = [];
+    });
+  }
+
+  // 在WorkManager类中添加类型守卫
+  private isWorkDataType<T extends WorkType>(
+    type: T,
+    data: unknown,
+  ): data is WorkDataType<T> {
+    switch (type) {
+      case WorkType.SAMPLE:
+        return data instanceof File;
+      case WorkType.DECODE:
+        return !!(
+          data &&
+          typeof data === "object" &&
+          "samples" in data &&
+          "config" in data &&
+          "timescale" in data
+        );
+      case WorkType.METADATA:
+        return data instanceof File;
+      default:
+        return false;
+    }
+  }
 }

@@ -1,6 +1,18 @@
-import { expose } from 'comlink'
-import MP4Box from '@webav/mp4box.js'
-import type { MP4ArrayBuffer,TrakBoxParser } from '@webav/mp4box.js'
+import MP4Box from "@webav/mp4box.js";
+import type { MP4ArrayBuffer, TrakBoxParser } from "@webav/mp4box.js";
+import { expose } from "comlink";
+
+import { TaskHandler, WorkResultMap, WorkType } from "./WorkManager";
+
+export class MetadataTaskHandler implements TaskHandler<WorkType.METADATA> {
+  async handle(
+    worker: Worker,
+    data: File,
+  ): Promise<WorkResultMap[WorkType.METADATA]> {
+    const metaWorker = worker as unknown as MetadataWorker;
+    return metaWorker.parse(data);
+  }
+}
 
 /**
  * 解析视频编解码器描述信息
@@ -22,8 +34,6 @@ function parseVideoCodecDesc(track: TrakBoxParser): Uint8Array {
   throw Error("avcC, hvcC, av1C or VPX not found");
 }
 
-
-
 const worker = {
   async parse(file: File): Promise<{
     duration: number;
@@ -35,12 +45,11 @@ const worker = {
     createTime: Date;
     timescale: number;
   }> {
-    const buffer = await file.arrayBuffer()
-    const mp4File = MP4Box.createFile()
-    
+    const buffer = await file.arrayBuffer();
+    const mp4File = MP4Box.createFile();
+
     return new Promise((resolve, reject) => {
       mp4File.onReady = async (info) => {
-
         const videoTrack = info.videoTracks[0];
         if (!videoTrack) {
           reject(new Error("No video track found"));
@@ -50,7 +59,6 @@ const worker = {
         const description = parseVideoCodecDesc(
           mp4File.getTrackById(videoTrack.id),
         );
-
 
         const width = videoTrack.track_width;
         const height = videoTrack.track_height;
@@ -70,16 +78,16 @@ const worker = {
           frameRate,
           createTime,
           timescale,
-        })
-      }
-      mp4File.onError = reject
-      
-      const bufferWithOffset = buffer as MP4ArrayBuffer
-      bufferWithOffset.fileStart = 0
-      mp4File.appendBuffer(bufferWithOffset)
-    })
-  }
-}
+        });
+      };
+      mp4File.onError = reject;
 
-export type MetadataWorker = typeof worker
-expose(worker,self)
+      const bufferWithOffset = buffer as MP4ArrayBuffer;
+      bufferWithOffset.fileStart = 0;
+      mp4File.appendBuffer(bufferWithOffset);
+    });
+  },
+};
+
+export type MetadataWorker = typeof worker;
+expose(worker, self);
