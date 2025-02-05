@@ -5,14 +5,18 @@ import { DecodeTaskHandler, DecodedFrame } from "./Decode.worker";
 import { MetadataTaskHandler } from "./Metadata.worker";
 import { SampleTaskHandler } from "./Sample.worker";
 
-// 定义工作类型枚举
+/**
+ * 工作类型枚举，定义了支持的任务类型
+ */
 export enum WorkType {
   SAMPLE = "sample",
   DECODE = "decode",
   METADATA = "metadata",
 }
 
-// 定义每种工作类型对应的数据类型映射
+/**
+ * 工作数据类型映射，定义每种任务类型对应的输入数据结构
+ */
 export interface WorkDataMap {
   [WorkType.SAMPLE]: File;
   [WorkType.DECODE]: {
@@ -23,10 +27,14 @@ export interface WorkDataMap {
   [WorkType.METADATA]: File;
 }
 
-// 使用映射类型替代三元运算符
+/**
+ * 工作数据类型，使用映射类型替代三元运算符
+ */
 export type WorkDataType<T extends WorkType> = WorkDataMap[T];
 
-// 定义每个worker的返回类型映射
+/**
+ * Worker返回结果映射，定义每种任务类型对应的输出数据结构
+ */
 export interface WorkResultMap {
   [WorkType.SAMPLE]: MP4Sample[];
   [WorkType.DECODE]: DecodedFrame[];
@@ -42,7 +50,9 @@ export interface WorkResultMap {
   };
 }
 
-// 修改任务接口，使用WorkResultMap来约束resolve和reject的类型
+/**
+ * 工作任务接口，使用WorkResultMap约束resolve和reject的类型
+ */
 interface WorkTask<T extends WorkType = WorkType> {
   type: T;
   priority: number;
@@ -51,19 +61,24 @@ interface WorkTask<T extends WorkType = WorkType> {
   reject: (reason: Error) => void;
 }
 
-// 修改策略接口
+/**
+ * 任务处理器接口
+ */
 export interface TaskHandler<T extends WorkType = WorkType> {
   handle(worker: Worker, data: WorkDataType<T>): Promise<WorkResultMap[T]>;
 }
 
+/**
+ * 工作管理器类，负责管理和调度不同类型的Worker任务
+ */
 export class WorkManager {
-  // 共享的解码帧数据（使用Map存储不同时间段的帧）
+  /** 共享的解码帧数据，使用Map存储不同时间段的帧 */
   private static sharedFrames = new Map<string, DecodedFrame[]>();
 
-  // 任务队列（按优先级排序）
+  /** 任务队列，按优先级排序 */
   private taskQueue: Array<WorkTask> = [];
 
-  // Worker池（使用Map存储不同类型的worker）
+  /** Worker池，使用Map存储不同类型的worker */
   private workerPool = new Map<
     WorkType,
     {
@@ -72,23 +87,28 @@ export class WorkManager {
     }
   >([
     [WorkType.SAMPLE, { workers: [], maxCount: 2 }],
-    [WorkType.DECODE, { workers: [], maxCount: 4 }], // 解码worker数量最多
+    [WorkType.DECODE, { workers: [], maxCount: 4 }],
     [WorkType.METADATA, { workers: [], maxCount: 1 }],
   ]);
 
-  // 在WorkManager类中添加策略映射
+  /** 任务处理器映射 */
   private taskHandlers = new Map<WorkType, TaskHandler>([
     [WorkType.SAMPLE, new SampleTaskHandler()],
     [WorkType.DECODE, new DecodeTaskHandler()],
     [WorkType.METADATA, new MetadataTaskHandler()],
   ]);
 
-  // 关联的视频实例
+  /**
+   * 创建工作管理器实例
+   * @param video 关联的视频实例
+   */
   constructor(private video: Video) {
     this.initWorkers();
   }
 
-  // 初始化Worker池
+  /**
+   * 初始化Worker池
+   */
   private initWorkers() {
     this.workerPool.forEach((config, type) => {
       for (let i = 0; i < config.maxCount; i++) {
@@ -111,7 +131,10 @@ export class WorkManager {
     });
   }
 
-  // 添加任务到队列
+  /**
+   * 添加任务到队列
+   * @param task 要添加的任务
+   */
   private enqueueTask<T extends WorkType>(task: WorkTask<T>) {
     if (!this.isWorkDataType(task.type, task.data)) {
       task.reject(new Error(`Invalid data type for ${task.type} task`));
@@ -126,7 +149,9 @@ export class WorkManager {
     this.processTasks();
   }
 
-  // 处理任务
+  /**
+   * 处理任务队列中的任务
+   */
   private async processTasks() {
     for (const type of [WorkType.METADATA, WorkType.SAMPLE, WorkType.DECODE]) {
       const pool = this.workerPool.get(type)!;
@@ -138,7 +163,7 @@ export class WorkManager {
 
         const task = this.taskQueue.splice(taskIndex, 1)[0];
         const workerIndex = pool.workers.indexOf(availableWorker);
-        pool.workers[workerIndex] = null; // 标记为忙碌
+        pool.workers[workerIndex] = null;
 
         try {
           const result = await this.executeTask(
@@ -147,7 +172,6 @@ export class WorkManager {
             task.data,
           );
 
-          // 处理解码结果
           if (type === WorkType.DECODE) {
             const frames = result as DecodedFrame[];
             this.mergeFrames(frames);
@@ -157,14 +181,17 @@ export class WorkManager {
         } catch (error) {
           task.reject(error);
         } finally {
-          pool.workers[workerIndex] = availableWorker; // 恢复可用状态
-          this.processTasks(); // 继续处理剩余任务
+          pool.workers[workerIndex] = availableWorker;
+          this.processTasks();
         }
       }
     }
   }
 
-  // 合并解码帧（使用时间戳去重）
+  /**
+   * 合并解码帧，使用时间戳去重
+   * @param newFrames 新的解码帧数组
+   */
   private mergeFrames(newFrames: DecodedFrame[]) {
     const existingFrames = this.video.videoFrame;
     const merged = [...existingFrames];
@@ -175,12 +202,17 @@ export class WorkManager {
       }
     });
 
-    // 按时间戳排序
     merged.sort((a, b) => a.timestamp - b.timestamp);
     this.video.videoFrame = merged;
   }
 
-  // 修改后的executeTask方法
+  /**
+   * 执行任务
+   * @param worker 执行任务的Worker实例
+   * @param type 任务类型
+   * @param data 任务数据
+   * @returns 任务执行结果
+   */
   private async executeTask<T extends WorkType>(
     worker: Worker,
     type: T,
@@ -193,7 +225,10 @@ export class WorkManager {
     return handler.handle(worker, data) as Promise<WorkResultMap[T]>;
   }
 
-  // 公共方法：提交元数据解析任务
+  /**
+   * 提交元数据解析任务
+   * @param file 要解析的文件
+   */
   async parseMetadata(file: File): Promise<void> {
     const meta = await new Promise<WorkResultMap[WorkType.METADATA]>(
       (resolve, reject) => {
@@ -211,7 +246,11 @@ export class WorkManager {
     this.video.status = "finished";
   }
 
-  // 公共方法：提交采样任务
+  /**
+   * 提交采样任务
+   * @param file 要采样的文件
+   * @returns 采样结果
+   */
   async processSamples(file: File): Promise<WorkResultMap[WorkType.SAMPLE]> {
     return new Promise((resolve, reject) => {
       this.enqueueTask({
@@ -224,7 +263,13 @@ export class WorkManager {
     });
   }
 
-  // 公共方法：提交解码任务
+  /**
+   * 提交解码任务
+   * @param samples 要解码的样本数组
+   * @param config 解码配置
+   * @param timescale 时间刻度
+   * @returns 解码后的帧数组
+   */
   async decodeFrames(
     samples: MP4Sample[],
     config: any,
@@ -241,7 +286,9 @@ export class WorkManager {
     });
   }
 
-  // 销毁所有worker
+  /**
+   * 销毁所有worker实例
+   */
   destroy() {
     this.workerPool.forEach((config) => {
       config.workers.forEach((worker) => {
@@ -251,7 +298,12 @@ export class WorkManager {
     });
   }
 
-  // 在WorkManager类中添加类型守卫
+  /**
+   * 类型守卫，检查数据类型是否匹配任务类型
+   * @param type 任务类型
+   * @param data 要检查的数据
+   * @returns 数据类型是否匹配
+   */
   private isWorkDataType<T extends WorkType>(
     type: T,
     data: unknown,

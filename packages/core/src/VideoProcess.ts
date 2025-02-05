@@ -6,11 +6,19 @@ import { Video } from "./elements/resource/Video.ts";
 import { VideoProcessor } from "./utils/VideoProcessor.ts";
 import type { MetadataWorker } from "./workers/Metadata.worker.ts";
 
+/**
+ * 视频处理类，负责处理视频上传、解析元数据和生成预览等功能
+ */
 class VideoProcess {
   state: EditorState;
   private videoProcessor: VideoProcessor;
   private proxyWorker: ProxyResult<MetadataWorker>;
 
+  /**
+   * 创建视频处理实例
+   * @param params 初始化参数
+   * @param params.state 编辑器状态管理实例
+   */
   constructor({ state }: { state: EditorState }) {
     this.state = state;
     this.videoProcessor = new VideoProcessor();
@@ -22,26 +30,33 @@ class VideoProcess {
     );
   }
 
-    /**
+  /**
    * 获取视频封面
+   * @param videoUrl 视频文件的 URL
+   * @returns 返回视频封面的 base64 编码
    */
-    public async getVideoCover(videoUrl: string): Promise<string> {
-      return new Promise((resolve) => {
-        const video = document.createElement("video");
-        video.src = videoUrl;
-        video.currentTime = 0;
-        video.addEventListener("loadeddata", () => {
-          const canvas = document.createElement("canvas");
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
-          const ctx = canvas.getContext("2d");
-          ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
-          resolve(canvas.toDataURL("image/jpeg"));
-        });
+  public async getVideoCover(videoUrl: string): Promise<string> {
+    return new Promise((resolve) => {
+      const video = document.createElement("video");
+      video.src = videoUrl;
+      video.currentTime = 0;
+      video.addEventListener("loadeddata", () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg"));
       });
-    }
-  
+    });
+  }
 
+  /**
+   * 处理视频上传
+   * @param params 上传参数
+   * @param params.file 上传的视频文件
+   * @throws 当视频处理失败时抛出错误
+   */
   onVideoUpload = async ({ file }: { file: File }) => {
     const newVideo = new Video({
       name: file.name,
@@ -52,34 +67,44 @@ class VideoProcess {
 
     this.state.setVideos([...this.state.getVideos(), newVideo]);
 
-    this.proxyWorker
-      .parse(file)
-      .then(async ({ duration, width, height, codec, frameRate, description, createTime,timescale }) => {
-        const videoFrames = [];
+    try {
+      const {
+        duration,
+        width,
+        height,
+        codec,
+        frameRate,
+        description,
+        createTime,
+        timescale,
+      } = await this.proxyWorker.parse(file);
 
-        newVideo.width = width;
-        newVideo.height = height;
-        newVideo.frameRate = frameRate;
-        newVideo.duration = Number(duration.toFixed(2));
-        newVideo.createTime = createTime;
-        newVideo.codec = codec;
-        newVideo.status = "finished";
+      const videoFrames = [];
 
-        newVideo.cover = await this.getVideoCover(newVideo.fileUrl);
-        newVideo.videoFrame = videoFrames;
-      })
-      .catch((error) => {
-        console.error(error);
-        newVideo.status = "error";
-      })
-      .finally(() => {
-        this.state.setVideos([
-          ...this.state.getVideos().filter((v) => v.id !== newVideo.id),
-          newVideo,
-        ]);
-      });
+      newVideo.width = width;
+      newVideo.height = height;
+      newVideo.frameRate = frameRate;
+      newVideo.duration = Number(duration.toFixed(2));
+      newVideo.createTime = createTime;
+      newVideo.codec = codec;
+      newVideo.status = "finished";
+
+      newVideo.cover = await this.getVideoCover(newVideo.fileUrl);
+      newVideo.videoFrame = videoFrames;
+    } catch (error) {
+      console.error("视频处理失败:", error);
+      newVideo.status = "error";
+    } finally {
+      this.state.setVideos([
+        ...this.state.getVideos().filter((v) => v.id !== newVideo.id),
+        newVideo,
+      ]);
+    }
   };
 
+  /**
+   * 释放资源，清理视频处理器和相关资源
+   */
   public dispose() {
     if (this.videoProcessor) {
       this.videoProcessor.dispose();
