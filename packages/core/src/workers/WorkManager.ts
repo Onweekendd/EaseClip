@@ -2,7 +2,6 @@ import { MP4Sample } from "@webav/mp4box.js";
 
 import { Video } from "../elements/resource/Video";
 import { DecodeTaskHandler, DecodedFrame } from "./Decode.worker";
-import { MetadataTaskHandler } from "./Metadata.worker";
 import { SampleTaskHandler } from "./Sample.worker";
 
 /**
@@ -11,7 +10,6 @@ import { SampleTaskHandler } from "./Sample.worker";
 export enum WorkType {
   SAMPLE = "sample",
   DECODE = "decode",
-  METADATA = "metadata",
 }
 
 /**
@@ -24,13 +22,7 @@ export interface WorkDataMap {
     config: any;
     timescale: number;
   };
-  [WorkType.METADATA]: File;
 }
-
-/**
- * 工作数据类型，使用映射类型替代三元运算符
- */
-export type WorkDataType<T extends WorkType> = WorkDataMap[T];
 
 /**
  * Worker返回结果映射，定义每种任务类型对应的输出数据结构
@@ -38,16 +30,6 @@ export type WorkDataType<T extends WorkType> = WorkDataMap[T];
 export interface WorkResultMap {
   [WorkType.SAMPLE]: MP4Sample[];
   [WorkType.DECODE]: DecodedFrame[];
-  [WorkType.METADATA]: {
-    duration: number;
-    width: number;
-    height: number;
-    codec: string;
-    description: Uint8Array;
-    frameRate: number;
-    createTime: Date;
-    timescale: number;
-  };
 }
 
 /**
@@ -56,7 +38,7 @@ export interface WorkResultMap {
 interface WorkTask<T extends WorkType = WorkType> {
   type: T;
   priority: number;
-  data: WorkDataType<T>;
+  data: WorkDataMap[T];
   resolve: (value: WorkResultMap[T]) => void;
   reject: (reason: Error) => void;
 }
@@ -65,16 +47,13 @@ interface WorkTask<T extends WorkType = WorkType> {
  * 任务处理器接口
  */
 export interface TaskHandler<T extends WorkType = WorkType> {
-  handle(worker: Worker, data: WorkDataType<T>): Promise<WorkResultMap[T]>;
+  handle(worker: Worker, data: WorkDataMap[T]): Promise<WorkResultMap[T]>;
 }
 
 /**
  * 工作管理器类，负责管理和调度不同类型的Worker任务
  */
 export class WorkManager {
-  /** 共享的解码帧数据，使用Map存储不同时间段的帧 */
-  private static sharedFrames = new Map<string, DecodedFrame[]>();
-
   /** 任务队列，按优先级排序 */
   private taskQueue: Array<WorkTask> = [];
 
@@ -88,14 +67,12 @@ export class WorkManager {
   >([
     [WorkType.SAMPLE, { workers: [], maxCount: 2 }],
     [WorkType.DECODE, { workers: [], maxCount: 4 }],
-    [WorkType.METADATA, { workers: [], maxCount: 1 }],
   ]);
 
   /** 任务处理器映射 */
   private taskHandlers = new Map<WorkType, TaskHandler>([
     [WorkType.SAMPLE, new SampleTaskHandler()],
     [WorkType.DECODE, new DecodeTaskHandler()],
-    [WorkType.METADATA, new MetadataTaskHandler()],
   ]);
 
   /**
@@ -119,11 +96,6 @@ export class WorkManager {
             break;
           case WorkType.DECODE:
             worker = new Worker(new URL("./Decode.worker.ts", import.meta.url));
-            break;
-          case WorkType.METADATA:
-            worker = new Worker(
-              new URL("./Metadata.worker.ts", import.meta.url),
-            );
             break;
         }
         config.workers.push(worker);
@@ -153,7 +125,7 @@ export class WorkManager {
    * 处理任务队列中的任务
    */
   private async processTasks() {
-    for (const type of [WorkType.METADATA, WorkType.SAMPLE, WorkType.DECODE]) {
+    for (const type of [WorkType.SAMPLE, WorkType.DECODE]) {
       const pool = this.workerPool.get(type)!;
       const availableWorker = pool.workers.find((w) => w !== null);
 
@@ -193,17 +165,7 @@ export class WorkManager {
    * @param newFrames 新的解码帧数组
    */
   private mergeFrames(newFrames: DecodedFrame[]) {
-    const existingFrames = this.video.videoFrame;
-    const merged = [...existingFrames];
-
-    newFrames.forEach((frame) => {
-      if (!existingFrames.some((f) => f.timestamp === frame.timestamp)) {
-        merged.push(frame);
-      }
-    });
-
-    merged.sort((a, b) => a.timestamp - b.timestamp);
-    this.video.videoFrame = merged;
+    this.video.frameManager.addFrames(newFrames);
   }
 
   /**
@@ -216,34 +178,13 @@ export class WorkManager {
   private async executeTask<T extends WorkType>(
     worker: Worker,
     type: T,
-    data: WorkDataType<T>,
+    data: WorkDataMap[T],
   ): Promise<WorkResultMap[T]> {
     const handler = this.taskHandlers.get(type);
     if (!handler) {
       throw new Error("Unsupported work type");
     }
     return handler.handle(worker, data) as Promise<WorkResultMap[T]>;
-  }
-
-  /**
-   * 提交元数据解析任务
-   * @param file 要解析的文件
-   */
-  async parseMetadata(file: File): Promise<void> {
-    const meta = await new Promise<WorkResultMap[WorkType.METADATA]>(
-      (resolve, reject) => {
-        this.enqueueTask({
-          type: WorkType.METADATA,
-          priority: 1,
-          data: file,
-          resolve,
-          reject,
-        });
-      },
-    );
-
-    Object.assign(this.video, meta);
-    this.video.status = "finished";
   }
 
   /**
@@ -307,7 +248,7 @@ export class WorkManager {
   private isWorkDataType<T extends WorkType>(
     type: T,
     data: unknown,
-  ): data is WorkDataType<T> {
+  ): data is WorkDataMap[T] {
     switch (type) {
       case WorkType.SAMPLE:
         return data instanceof File;
@@ -319,8 +260,6 @@ export class WorkManager {
           "config" in data &&
           "timescale" in data
         );
-      case WorkType.METADATA:
-        return data instanceof File;
       default:
         return false;
     }

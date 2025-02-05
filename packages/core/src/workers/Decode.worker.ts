@@ -3,7 +3,7 @@ import { expose } from "comlink";
 
 import {
   TaskHandler,
-  WorkDataType,
+  WorkDataMap,
   WorkResultMap,
   WorkType,
 } from "./WorkManager";
@@ -11,7 +11,7 @@ import {
 export class DecodeTaskHandler implements TaskHandler<WorkType.DECODE> {
   async handle(
     worker: Worker,
-    data: WorkDataType<WorkType.DECODE>,
+    data: WorkDataMap[WorkType.DECODE],
   ): Promise<WorkResultMap[WorkType.DECODE]> {
     const decodeWorker = worker as unknown as DecodeWorker;
     return decodeWorker.decode(data.samples, data.config, data.timescale);

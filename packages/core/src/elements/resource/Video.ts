@@ -1,6 +1,8 @@
 import { v4 as uuidv4 } from "uuid";
 
+import { WorkManager } from "../../workers/WorkManager.js";
 import type { BaseElement } from "../BaseElement.js";
+import { FrameManager } from "./FrameManager.js";
 
 export interface DecodedFrame {
   imageBitmap: ImageBitmap;
@@ -39,6 +41,10 @@ class Video implements BaseElement {
   codec: string;
 
   videoFrame: DecodedFrame[];
+
+  frameManager: FrameManager;
+
+  workManager: WorkManager;
 
   constructor({
     name,
