@@ -18,11 +18,3 @@ export interface Clip<T extends BaseElement> {
 
   type: "image" | "video" | "audio" | "text";
 }
-
-interface VideoResource {
-  videoFrame: Array<{
-    imageBitmap: ImageBitmap;
-    duration: number | null;
-    timestamp: number;
-  }>;
-}

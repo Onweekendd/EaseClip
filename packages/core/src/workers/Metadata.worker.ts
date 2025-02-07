@@ -2,18 +2,6 @@ import MP4Box from "@webav/mp4box.js";
 import type { MP4ArrayBuffer, TrakBoxParser } from "@webav/mp4box.js";
 import { expose } from "comlink";
 
-import { TaskHandler, WorkResultMap, WorkType } from "./WorkManager";
-
-export class MetadataTaskHandler implements TaskHandler<WorkType.METADATA> {
-  async handle(
-    worker: Worker,
-    data: File,
-  ): Promise<WorkResultMap[WorkType.METADATA]> {
-    const metaWorker = worker as unknown as MetadataWorker;
-    return metaWorker.parse(data);
-  }
-}
-
 /**
  * 解析视频编解码器描述信息
  */
