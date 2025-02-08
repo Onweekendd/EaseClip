@@ -7,7 +7,7 @@ import { TaskHandler, WorkResultMap, WorkType } from "./WorkManager";
 export class SampleTaskHandler implements TaskHandler<WorkType.SAMPLE> {
   async handle(
     worker: Worker,
-    data: File,
+    data: ArrayBuffer,
   ): Promise<WorkResultMap[WorkType.SAMPLE]> {
     const sampleWorker = worker as unknown as SampleWorker;
     return sampleWorker.sample(data);
@@ -19,7 +19,7 @@ export class SampleTaskHandler implements TaskHandler<WorkType.SAMPLE> {
  * 负责从MP4文件中提取视频样本数据
  */
 const worker = {
-  async sample(file: File): Promise<MP4Sample[]> {
+  async sample(buffer: ArrayBuffer): Promise<MP4Sample[]> {
     return new Promise((resolve, reject) => {
       const samples: MP4Sample[] = [];
 
@@ -65,16 +65,10 @@ const worker = {
         }
       };
 
-      // 读取文件数据
-      file
-        .arrayBuffer()
-        .then((buffer) => {
-          const arrayBuffer = buffer as MP4ArrayBuffer;
-          arrayBuffer.fileStart = 0;
-          mp4File.appendBuffer(arrayBuffer);
-          mp4File.flush();
-        })
-        .catch(reject);
+      const arrayBuffer = buffer as MP4ArrayBuffer;
+      arrayBuffer.fileStart = 0;
+      mp4File.appendBuffer(arrayBuffer);
+      mp4File.flush();
     });
   },
 };

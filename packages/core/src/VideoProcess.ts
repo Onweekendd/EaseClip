@@ -1,3 +1,4 @@
+import { MP4Sample } from "@webav/mp4box.js";
 import { proxy } from "comlink";
 import type { ProxyResult } from "comlink";
 
@@ -79,8 +80,6 @@ class VideoProcess {
         timescale,
       } = await this.proxyWorker.parse(file);
 
-      const videoFrames = [];
-
       newVideo.width = width;
       newVideo.height = height;
       newVideo.frameRate = frameRate;
@@ -88,9 +87,25 @@ class VideoProcess {
       newVideo.createTime = createTime;
       newVideo.codec = codec;
       newVideo.status = "finished";
+      newVideo.description = description;
+      newVideo.timescale = timescale;
 
       newVideo.cover = await this.getVideoCover(newVideo.fileUrl);
-      newVideo.videoFrame = videoFrames;
+
+      // 预解码 处理文件的前1%
+      const fileReader = new FileReader();
+      fileReader.readAsArrayBuffer(file);
+      fileReader.onload = () => {
+        const buffer = fileReader.result as ArrayBuffer;
+        const view = new DataView(buffer);
+        const start = Math.floor(view.byteLength * 0.01);
+        const end = view.byteLength;
+
+        // 截取前1%的文件
+        const sample = buffer.slice(start, end);
+
+        newVideo.workManager.processSamples(sample);
+      };
     } catch (error) {
       console.error("视频处理失败:", error);
       newVideo.status = "error";

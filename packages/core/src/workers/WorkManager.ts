@@ -7,6 +7,7 @@ import { SampleTaskHandler } from "./Sample.worker";
 /**
  * 工作类型枚举，定义了支持的任务类型
  */
+
 export enum WorkType {
   SAMPLE = "sample",
   DECODE = "decode",
@@ -16,7 +17,7 @@ export enum WorkType {
  * 工作数据类型映射，定义每种任务类型对应的输入数据结构
  */
 export interface WorkDataMap {
-  [WorkType.SAMPLE]: File;
+  [WorkType.SAMPLE]: ArrayBuffer;
   [WorkType.DECODE]: {
     samples: MP4Sample[];
     config: any;
@@ -75,11 +76,10 @@ export class WorkManager {
     [WorkType.DECODE, new DecodeTaskHandler()],
   ]);
 
-  /**
-   * 创建工作管理器实例
-   * @param video 关联的视频实例
-   */
-  constructor(private video: Video) {
+  private video: Video;
+
+  constructor(video: Video) {
+    this.video = video;
     this.initWorkers();
   }
 
@@ -144,6 +144,28 @@ export class WorkManager {
             task.data,
           );
 
+          if (type === WorkType.SAMPLE) {
+            const samples = result as MP4Sample[];
+
+            // 开始解码任务
+            this.enqueueTask({
+              type: WorkType.DECODE,
+              priority: 3,
+              data: {
+                samples,
+                config: this.video.description,
+                timescale: this.video.timescale,
+              },
+              resolve: (frames) => {
+                this.mergeFrames(frames);
+                task.resolve(frames);
+              },
+              reject: (error) => {
+                task.reject(error);
+              },
+            });
+          }
+
           if (type === WorkType.DECODE) {
             const frames = result as DecodedFrame[];
             this.mergeFrames(frames);
@@ -192,13 +214,16 @@ export class WorkManager {
    * @param file 要采样的文件
    * @returns 采样结果
    */
-  async processSamples(file: File): Promise<WorkResultMap[WorkType.SAMPLE]> {
+  async processSamples(
+    sample: ArrayBuffer,
+  ): Promise<WorkResultMap[WorkType.SAMPLE]> {
     return new Promise((resolve, reject) => {
       this.enqueueTask({
         type: WorkType.SAMPLE,
         priority: 2,
-        data: file,
+        data: sample,
         resolve,
+
         reject,
       });
     });

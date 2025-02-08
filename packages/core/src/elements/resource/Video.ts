@@ -40,11 +40,13 @@ class Video implements BaseElement {
   /**@description 编解码器 */
   codec: string;
 
-  videoFrame: DecodedFrame[];
-
   frameManager: FrameManager;
 
   workManager: WorkManager;
+
+  description: Uint8Array;
+
+  timescale: number;
 
   constructor({
     name,
@@ -58,18 +60,23 @@ class Video implements BaseElement {
     duration,
     cover,
     videoFrame,
+    description,
+    timescale,
   }: {
     name?: string;
     fileSize?: number;
     fileType?: string;
     fileUrl?: string;
     width?: number;
+
     height?: number;
     frameRate?: number;
     createTime?: Date;
     duration?: number;
     cover?: string;
     videoFrame?: DecodedFrame[];
+    description?: Uint8Array;
+    timescale?: number;
   } = {}) {
     this.id = uuidv4();
     this.status = "processing";
@@ -85,7 +92,11 @@ class Video implements BaseElement {
     this.cover = cover || "";
     this.width = width || 0;
     this.height = height || 0;
-    this.videoFrame = videoFrame || [];
+    this.description = description;
+    this.timescale = timescale;
+
+    this.frameManager = new FrameManager();
+    this.workManager = new WorkManager(this);
   }
 }
 
