@@ -14,5 +14,13 @@
       "mode": "auto"
     }
   ],
-  "cSpell.words": ["demux", "Konva", "trivago", "uuidv", "vframes"]
+  "cSpell.words": [
+    "comlink",
+    "demux",
+    "Konva",
+    "trivago",
+    "uuidv",
+    "vframes",
+    "webav"
+  ]
 }

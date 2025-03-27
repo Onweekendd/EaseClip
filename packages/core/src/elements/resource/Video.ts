@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 
-import { WorkManager } from "../../workers/WorkManager.js";
+import { VideoTaskManager } from "../../utils/VideoTaskManager.js";
 import type { BaseElement } from "../BaseElement.js";
 import { FrameManager } from "./FrameManager.js";
 
@@ -42,7 +42,7 @@ class Video implements BaseElement {
 
   frameManager: FrameManager;
 
-  workManager: WorkManager;
+  taskManager: VideoTaskManager;
 
   description: Uint8Array;
 
@@ -96,7 +96,27 @@ class Video implements BaseElement {
     this.timescale = timescale;
 
     this.frameManager = new FrameManager();
-    this.workManager = new WorkManager(this);
+    this.taskManager = new VideoTaskManager(this);
+  }
+
+  /**
+   * 处理视频样本
+   * @param sample 视频样本数据
+   * @param timeRange 可选的时间范围
+   */
+  processSamples(
+    sample: ArrayBuffer,
+    timeRange?: { start: number; end: number },
+  ) {
+    return this.taskManager.processSamples(sample, timeRange);
+  }
+
+  /**
+   * 释放资源
+   */
+  dispose() {
+    this.taskManager.destroy();
+    this.frameManager.releaseFrames(0, Number.MAX_VALUE);
   }
 }
 

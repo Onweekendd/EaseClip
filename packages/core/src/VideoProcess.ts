@@ -92,19 +92,22 @@ class VideoProcess {
 
       newVideo.cover = await this.getVideoCover(newVideo.fileUrl);
 
-      // 预解码 处理文件的前1%
+      // 预解码 - 使用基于时间的采样方法
       const fileReader = new FileReader();
       fileReader.readAsArrayBuffer(file);
       fileReader.onload = () => {
         const buffer = fileReader.result as ArrayBuffer;
-        const view = new DataView(buffer);
-        const start = Math.floor(view.byteLength * 0.01);
-        const end = view.byteLength;
 
-        // 截取前1%的文件
-        const sample = buffer.slice(start, end);
+        // 计算预览时间范围 - 例如处理前10秒或视频的前10%
+        const previewDuration = 10; // 预览前10秒
+        const endTime = Math.min(previewDuration, newVideo.duration);
 
-        newVideo.workManager.processSamples(sample);
+        // 使用时间范围而非切分ArrayBuffer
+        // 使用Video类的新方法
+        newVideo.processSamples(buffer, {
+          start: 0,
+          end: endTime,
+        });
       };
     } catch (error) {
       console.error("视频处理失败:", error);

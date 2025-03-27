@@ -2,15 +2,29 @@ import MP4Box from "@webav/mp4box.js";
 import type { MP4ArrayBuffer, MP4Sample } from "@webav/mp4box.js";
 import { expose } from "comlink";
 
-import { TaskHandler, WorkResultMap, WorkType } from "./WorkManager";
+import { TaskHandler } from "../utils/TaskManager";
+import {
+  VideoTask,
+  VideoTaskDataMap,
+  VideoTaskResultMap,
+  VideoTaskType,
+} from "../utils/VideoTaskManager";
 
-export class SampleTaskHandler implements TaskHandler<WorkType.SAMPLE> {
+export class SampleTaskHandler implements TaskHandler<VideoTask> {
   async handle(
     worker: Worker,
-    data: ArrayBuffer,
-  ): Promise<WorkResultMap[WorkType.SAMPLE]> {
+    data: VideoTaskDataMap[VideoTaskType.SAMPLE],
+  ): Promise<VideoTaskResultMap[VideoTaskType.SAMPLE]> {
     const sampleWorker = worker as unknown as SampleWorker;
-    return sampleWorker.sample(data);
+    if (typeof data === "object" && "buffer" in data && "timeRange" in data) {
+      const { buffer, timeRange } = data;
+      return sampleWorker.sample(buffer, timeRange);
+    }
+
+    if (data instanceof ArrayBuffer) {
+      const buffer = data as ArrayBuffer;
+      return sampleWorker.sample(buffer);
+    }
   }
 }
 
@@ -19,7 +33,10 @@ export class SampleTaskHandler implements TaskHandler<WorkType.SAMPLE> {
  * 负责从MP4文件中提取视频样本数据
  */
 const worker = {
-  async sample(buffer: ArrayBuffer): Promise<MP4Sample[]> {
+  async sample(
+    buffer: ArrayBuffer,
+    timeRange?: { start: number; end: number },
+  ): Promise<MP4Sample[]> {
     return new Promise((resolve, reject) => {
       const samples: MP4Sample[] = [];
 
@@ -40,10 +57,25 @@ const worker = {
           return;
         }
 
-        // 设置采样选项
-        mp4File.setExtractionOptions(videoTrack.id, null, {
-          nbSamples: videoTrack.nb_samples,
-        });
+        // 设置采样选项 - 根据时间范围参数
+        if (timeRange) {
+          // 将时间(秒)转换为媒体时间单位
+          const startSample = Math.floor(
+            timeRange.start * videoTrack.timescale,
+          );
+          const endSample = Math.ceil(timeRange.end * videoTrack.timescale);
+          const sampleCount = endSample - startSample;
+
+          // 设置提取选项，只提取指定范围的样本
+          mp4File.setExtractionOptions(videoTrack.id, null, {
+            nbSamples: sampleCount > 0 ? sampleCount : videoTrack.nb_samples,
+          });
+        } else {
+          // 如果未指定时间范围，则提取全部样本
+          mp4File.setExtractionOptions(videoTrack.id, null, {
+            nbSamples: videoTrack.nb_samples,
+          });
+        }
 
         // 开始采样
         mp4File.start();

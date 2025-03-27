@@ -17,7 +17,15 @@ export enum WorkType {
  * 工作数据类型映射，定义每种任务类型对应的输入数据结构
  */
 export interface WorkDataMap {
-  [WorkType.SAMPLE]: ArrayBuffer;
+  [WorkType.SAMPLE]:
+    | ArrayBuffer
+    | {
+        buffer: ArrayBuffer;
+        timeRange?: {
+          start: number;
+          end: number;
+        };
+      };
   [WorkType.DECODE]: {
     samples: MP4Sample[];
     config: any;
@@ -211,19 +219,20 @@ export class WorkManager {
 
   /**
    * 提交采样任务
-   * @param file 要采样的文件
+   * @param sample 要采样的文件
+   * @param timeRange 可选的时间范围，单位为秒
    * @returns 采样结果
    */
   async processSamples(
     sample: ArrayBuffer,
+    timeRange?: { start: number; end: number },
   ): Promise<WorkResultMap[WorkType.SAMPLE]> {
     return new Promise((resolve, reject) => {
       this.enqueueTask({
         type: WorkType.SAMPLE,
         priority: 2,
-        data: sample,
+        data: timeRange ? { buffer: sample, timeRange } : sample,
         resolve,
-
         reject,
       });
     });
@@ -276,7 +285,18 @@ export class WorkManager {
   ): data is WorkDataMap[T] {
     switch (type) {
       case WorkType.SAMPLE:
-        return data instanceof File;
+        return (
+          data instanceof ArrayBuffer ||
+          (typeof data === "object" &&
+            data !== null &&
+            "buffer" in data &&
+            data.buffer instanceof ArrayBuffer &&
+            (!("timeRange" in data) ||
+              (typeof data.timeRange === "object" &&
+                data.timeRange !== null &&
+                "start" in data.timeRange &&
+                "end" in data.timeRange)))
+        );
       case WorkType.DECODE:
         return !!(
           data &&

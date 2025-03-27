@@ -1,18 +1,19 @@
 import type { MP4Sample } from "@webav/mp4box.js";
 import { expose } from "comlink";
 
+import { TaskHandler } from "../utils/TaskManager";
 import {
-  TaskHandler,
-  WorkDataMap,
-  WorkResultMap,
-  WorkType,
-} from "./WorkManager";
+  VideoTask,
+  VideoTaskDataMap,
+  VideoTaskResultMap,
+  VideoTaskType,
+} from "../utils/VideoTaskManager";
 
-export class DecodeTaskHandler implements TaskHandler<WorkType.DECODE> {
+export class DecodeTaskHandler implements TaskHandler<VideoTask> {
   async handle(
     worker: Worker,
-    data: WorkDataMap[WorkType.DECODE],
-  ): Promise<WorkResultMap[WorkType.DECODE]> {
+    data: VideoTaskDataMap[VideoTaskType.DECODE],
+  ): Promise<VideoTaskResultMap[VideoTaskType.DECODE]> {
     const decodeWorker = worker as unknown as DecodeWorker;
     return decodeWorker.decode(data.samples, data.config, data.timescale);
   }
