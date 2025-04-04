@@ -1,10 +1,8 @@
-import { MP4Sample } from "@webav/mp4box.js";
 import { proxy } from "comlink";
 import type { ProxyResult } from "comlink";
 
 import { EditorState } from "./EditorState.ts";
 import { Video } from "./elements/resource/Video.ts";
-import { VideoProcessor } from "./utils/VideoProcessor.ts";
 import type { MetadataWorker } from "./workers/Metadata.worker.ts";
 
 /**
@@ -12,7 +10,6 @@ import type { MetadataWorker } from "./workers/Metadata.worker.ts";
  */
 class VideoProcess {
   state: EditorState;
-  private videoProcessor: VideoProcessor;
   private proxyWorker: ProxyResult<MetadataWorker>;
 
   /**
@@ -22,7 +19,6 @@ class VideoProcess {
    */
   constructor({ state }: { state: EditorState }) {
     this.state = state;
-    this.videoProcessor = new VideoProcessor();
 
     this.proxyWorker = proxy<MetadataWorker>(
       new Worker(new URL("./workers/Metadata.worker.js", import.meta.url), {
@@ -119,15 +115,6 @@ class VideoProcess {
       ]);
     }
   };
-
-  /**
-   * 释放资源，清理视频处理器和相关资源
-   */
-  public dispose() {
-    if (this.videoProcessor) {
-      this.videoProcessor.dispose();
-    }
-  }
 }
 
 export { VideoProcess };

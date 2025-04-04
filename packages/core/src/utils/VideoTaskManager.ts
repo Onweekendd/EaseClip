@@ -140,18 +140,18 @@ export class VideoTaskManager extends TaskManager<VideoTask> {
       2,
     );
 
-    // 自动提交解码任务
-    this.submitTask(
-      VideoTaskType.DECODE,
-      {
-        samples: result,
-        config: this.video.description,
-        timescale: this.video.timescale,
-      },
-      3,
-    ).catch((error) => {
-      console.error("解码任务失败:", error);
-    });
+    // // 自动提交解码任务
+    // this.submitTask(
+    //   VideoTaskType.DECODE,
+    //   {
+    //     samples: result,
+    //     config: this.video.description,
+    //     timescale: this.video.timescale,
+    //   },
+    //   3,
+    // ).catch((error) => {
+    //   console.error("解码任务失败:", error);
+    // });
 
     return result;
   }

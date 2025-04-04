@@ -25,10 +25,29 @@ export interface TaskResultMap<T extends TaskType> {
  * 任务接口
  */
 export interface Task<T extends TaskType> {
+  /**
+   * 任务类型
+   */
   type: T["type"];
+
+  /**
+   * 任务优先级
+   */
   priority: number;
+
+  /**
+   * 任务入参
+   */
   data: TaskDataMap<T>[T["type"]];
+
+  /**
+   * 任务完成回调
+   */
   resolve: (value: TaskResultMap<T>[T["type"]]) => void;
+
+  /**
+   * 任务拒绝回调
+   */
   reject: (reason: Error) => void;
 }
 
