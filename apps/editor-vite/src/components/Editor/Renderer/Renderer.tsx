@@ -32,22 +32,18 @@ const Renderer = () => {
 
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const videoToElement = useRef<
-    Map<string, { canvas?: Image; imageBitmap?: ImageBitmap }>
+    Map<string, { renderElement?: Image; imageBitmap?: ImageBitmap }>
   >(new Map());
 
   const onVideoPlay = useCallback(
     (videoClip: VideoClip, currentTime: number) => {
       const elements = videoToElement.current.get(videoClip.id);
-      if (!elements?.canvas) return;
+      if (!elements?.renderElement) return;
 
       const findFrameStartTime = performance.now();
 
       // 找到当前时间对应的帧
-      const currentFrame = videoClip.resource?.videoFrame.find(
-        (frame) =>
-          frame.timestamp <= currentTime &&
-          (frame.duration ?? 0) + frame.timestamp > currentTime,
-      );
+      const currentFrame = videoClip.resource?.frameManager.getFrames(xxx);
 
       const findFrameEndTime = performance.now();
 
@@ -63,7 +59,7 @@ const Renderer = () => {
         });
 
         // 更新画布
-        elements.canvas.getLayer()?.batchDraw();
+        elements.renderElement.getLayer()?.batchDraw();
 
         const drawEndTime = performance.now();
 
@@ -164,7 +160,7 @@ const Renderer = () => {
                       if (node && videoClip.resource) {
                         videoToElement.current.set(videoClip.id, {
                           ...videoToElement.current.get(videoClip.id),
-                          canvas: node,
+                          renderElement: node,
                         });
                       }
                     }}
